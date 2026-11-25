@@ -114,7 +114,7 @@ function showSignals() {
   byId("signals-panel").hidden = false;
 }
 
-function drawChart(id, metric) {
+function drawChart(id, history, datasets, suffix = "") {
   const canvas = byId(id);
   const ctx = canvas.getContext("2d");
   const width = canvas.clientWidth;
@@ -124,13 +124,12 @@ function drawChart(id, metric) {
   canvas.width = width * ratio;
   canvas.height = height * ratio;
   ctx.scale(ratio, ratio);
-  const datasets = results.map(({ series }) => series.map((tick) =>
-    metric === "value" ? 100 * tick.value / series[0].value : 100 * tick.drawdown));
-  const values = datasets.flat();
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const left = 52, top = 12, right = width - 8, bottom = height - 27;
+  const values = datasets.flatMap(({ points }) => points);
+  const minValue = values.reduce((min, value) => Math.min(min, value), Infinity);
+  const maxValue = values.reduce((max, value) => Math.max(max, value), -Infinity);
+  const min = minValue === maxValue ? minValue - 1 : minValue;
+  const span = minValue === maxValue ? 2 : maxValue - minValue;
+  const left = 59, top = 12, right = width - 13, bottom = height - 27;
   const y = (value) => bottom - (value - min) / span * (bottom - top);
   ctx.font = "12px system-ui";
   ctx.fillStyle = "#b4c6d4";
@@ -142,16 +141,15 @@ function drawChart(id, metric) {
     ctx.moveTo(left, y(value));
     ctx.lineTo(right, y(value));
     ctx.stroke();
-    ctx.fillText(value.toFixed(1) + (metric === "value" ? "" : "%"), 2, y(value) + 4);
+    ctx.fillText(value.toFixed(1) + suffix, 2, y(value) + 4);
   }
-  const history = market.history;
   ctx.fillText(`Tick ${history[0].t ?? 0}`, left, height - 7);
   const lastTick = `Tick ${history.at(-1).t ?? history.length - 1}`;
   ctx.fillText(lastTick, right - ctx.measureText(lastTick).width, height - 7);
-  datasets.forEach((points, index) => {
-    ctx.strokeStyle = results[index].color;
-    ctx.fillStyle = results[index].color;
-    ctx.lineWidth = index === 0 ? 2.5 : 1.5;
+  datasets.forEach(({ points, color, emphasis }) => {
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = emphasis ? 2.5 : 1.5;
     ctx.beginPath();
     points.forEach((value, i) => {
       const x = left + i * (right - left) / Math.max(1, points.length - 1);
@@ -163,10 +161,45 @@ function drawChart(id, metric) {
   });
 }
 
+function showTrend() {
+  if (!market) return;
+  const product = byId("product").value;
+  const history = market.history;
+  const size = Number(byId("window").value);
+  const start = size ? Math.max(0, history.length - size) : 0;
+  const visible = history.slice(start);
+  const prices = visible.map((tick) => tick[product]);
+  const average = visible.map((_, offset) => {
+    const i = start + offset;
+    const ticks = history.slice(Math.max(0, i - 2), i + 1);
+    return ticks.reduce((sum, tick) => sum + tick[product], 0) / ticks.length;
+  });
+  const change = prices.at(-1) / prices[0] - 1;
+  byId("trend-summary").textContent =
+    `Product ${product} · Last price ${number(prices.at(-1))} · ${pct(change)} change across ${visible.length} ticks`;
+  drawChart("trend", visible, [
+    { points: prices, color: "#8cb9ff" },
+    { points: average, color: "#8be2c3", emphasis: true },
+  ]);
+}
+
 function redrawCharts() {
+  showTrend();
   if (mode !== "simulation" || !results) return;
-  drawChart("performance", "value");
-  drawChart("risk", "drawdown");
+  const indexed = results.map(({ id, color, series }) => ({
+    color, emphasis: id === "momentum", points: series.map((tick) => 100 * tick.value / series[0].value),
+  }));
+  const drawdowns = results.map(({ id, color, series }) => ({
+    color, emphasis: id === "momentum", points: series.map((tick) => 100 * tick.drawdown),
+  }));
+  drawChart("performance", market.history, indexed);
+  drawChart("risk", market.history, drawdowns, "%");
+}
+
+function setKpi(id, label, value = 0) {
+  const target = byId(id);
+  target.textContent = label;
+  target.dataset.tone = value < 0 ? "negative" : value > 0 ? "positive" : "";
 }
 
 function useSimulation() {
@@ -174,6 +207,15 @@ function useSimulation() {
   mode = "simulation";
   results ??= strategies.map((strategy) => replay(market, strategy));
   const own = results[0];
+  const totalReturn = ({ series }) => series.at(-1).value / series[0].value - 1;
+  const best = results.slice(1).reduce((a, b) => totalReturn(a) >= totalReturn(b) ? a : b);
+  const ownReturn = totalReturn(own);
+  const maxDrawdown = Math.min(...own.series.map((tick) => tick.drawdown));
+  const gap = ownReturn - totalReturn(best);
+  setKpi("return-kpi", pct(ownReturn), ownReturn);
+  setKpi("risk-kpi", pct(maxDrawdown), maxDrawdown);
+  setKpi("comparison-kpi", `${(100 * gap).toFixed(2)} pp`, gap);
+  byId("comparison-note").textContent = `vs. ${best.name} · simulation`;
   byId("holding-state").textContent = "Simulation active. These holdings and orders are fictional.";
   byId("holdings").textContent = [
     `Ending cash: ${number(own.cash)}`,
@@ -203,6 +245,8 @@ function useSimulation() {
 async function useLiveHoldings() {
   const request = ++holdingsRequest;
   mode = "live";
+  for (const id of ["return-kpi", "risk-kpi", "comparison-kpi"]) setKpi(id, "—");
+  byId("comparison-note").textContent = "Percentage points · simulation";
   byId("simulation").hidden = true;
   byId("holdings").hidden = true;
   byId("holding-state").textContent = "Checking the organizer’s holdings feed…";
@@ -220,6 +264,7 @@ async function useLiveHoldings() {
 
 byId("simulate").addEventListener("click", useSimulation);
 byId("live-mode").addEventListener("click", useLiveHoldings);
+for (const id of ["product", "window"]) byId(id).addEventListener("change", showTrend);
 window.addEventListener("resize", redrawCharts);
 useLiveHoldings();
 fetchFeed(MARKET_URL).then((data) => {
@@ -229,8 +274,12 @@ fetchFeed(MARKET_URL).then((data) => {
   }
   market = data;
   byId("market-state").textContent = `${data.history.length} market ticks · Last update ${data.generated_at}`;
+  byId("ticks-kpi").textContent = data.history.length;
+  for (const product of data.products) byId("product").add(new Option(product));
+  byId("market-panel").hidden = false;
   byId("simulate").disabled = false;
   showSignals();
+  showTrend();
 }).catch((error) => {
   byId("market-state").textContent = `Market feed unavailable (${error.message}). A valid price history is required to simulate.`;
 });
