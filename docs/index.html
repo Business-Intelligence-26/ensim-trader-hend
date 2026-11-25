@@ -1,19 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Feed sanity check</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feed sanity check</title></head>
 <body>
-  <h1>Feed sanity check — not your dashboard</h1>
-  <p>This just confirms your two feed URLs actually return real data. Your actual dashboard (return vs. baselines, risk/volatility, your product-level signal, a decision log) is a separate thing you build yourself — see below.</p>
-  <pre id="out">Loading...</pre>
+  <h1>Feed sanity check</h1>
+  <section>
+    <h2>Market</h2>
+    <pre id="market" aria-live="polite">Loading...</pre>
+  </section>
+  <section>
+    <h2>Holdings</h2>
+    <pre id="holdings" aria-live="polite">Loading...</pre>
+  </section>
 <script>
-const MARKET_URL = "PASTE_YOUR_MARKET_URL_HERE";
-const HOLDINGS_URL = "PASTE_YOUR_HOLDINGS_URL_HERE";
-Promise.all([fetch(MARKET_URL).then(r => r.json()), fetch(HOLDINGS_URL).then(r => r.json())])
-  .then(([market, holdings]) => {
-    document.getElementById('out').textContent =
-      'MARKET:\n' + JSON.stringify(market, null, 2) + '\n\nHOLDINGS:\n' + JSON.stringify(holdings, null, 2);
-  })
-  .catch(err => { document.getElementById('out').textContent = 'Could not load data: ' + err; });
+const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/docs/data/market.json";
+const HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/traders/hendzormati/holdings.json";
+
+async function checkFeed(id, url, describe) {
+  const output = document.getElementById(id);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      output.textContent = id === "holdings" && response.status === 404
+        ? "Holdings feed unavailable (HTTP 404). Check your registration and the exact URL with the organizer."
+        : `Feed unavailable (HTTP ${response.status}).`;
+      return;
+    }
+    const data = await response.json();
+    output.textContent = describe(data);
+  } catch (error) {
+    output.textContent = `Could not read the feed as JSON. ${error.message}`;
+  }
+}
+
+checkFeed("market", MARKET_URL, (market) => JSON.stringify({
+  generated_at: market.generated_at,
+  products: market.products,
+  ticks: market.history.length,
+  latest_tick: market.history.at(-1),
+}, null, 2));
+checkFeed("holdings", HOLDINGS_URL, (holdings) => JSON.stringify(holdings, null, 2));
 </script>
 </body>
 </html>
