@@ -1,44 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Feed sanity check</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ENSIM Trader | Hend Zormati</title>
+<script src="trader.js?v=simulation-1" defer></script>
+<style>
+:root { color-scheme: dark; font: 1rem/1.5 system-ui, sans-serif; background: #0e1721; color: #e7eff5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 76rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+header { border-bottom: 1px solid #354555; margin-bottom: 1rem; padding-bottom: 1rem; }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); margin: 0; }
+h2 { margin: 0 0 .5rem; font-size: 1.3rem; }
+p { margin: .45rem 0 .9rem; color: #b4c6d4; }
+.panel { padding: 1.1rem; border: 1px solid #354555; border-radius: .8rem; background: #162331; margin-bottom: 1rem; }
+.charts { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
+button { background: #8be2c3; color: #102523; border: 1px solid #8be2c3; border-radius: .45rem; font: inherit; font-weight: 700; padding: .5rem .85rem; margin: .2rem .3rem .2rem 0; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+#live-mode { background: transparent; color: #a7efd6; }
+canvas { width: 100%; height: 240px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: 0; list-style: none; }
+.legend span { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin-right: .4rem; }
+.scroller { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: .5rem .7rem; border-bottom: 1px solid #354555; text-align: left; }
+th { color: #b4c6d4; white-space: nowrap; }
+output { color: #a7efd6; font-weight: 700; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
 <body>
-  <h1>Feed sanity check</h1>
-  <section>
-    <h2>Market</h2>
-    <pre id="market" aria-live="polite">Loading...</pre>
+<main>
+<header><h1>ENSIM Trader</h1><p>Market signals, strategy comparisons, and trading decisions for Hend Zormati.</p><output id="market-state" aria-live="polite">Loading market history…</output></header>
+<section class="panel">
+  <h2>Holdings</h2>
+  <p id="holding-state" aria-live="polite">Checking the organizer’s holdings feed…</p>
+  <button id="simulate" disabled>Use simulated holdings</button>
+  <button id="live-mode">Use organizer holdings</button>
+  <pre id="holdings" hidden></pre>
+</section>
+<section class="panel" id="signals-panel" hidden>
+  <h2>Latest product signals</h2>
+  <p>Change between consecutive three-tick price averages. Hold below 2% in absolute terms. Cap orders at 10 units.</p>
+  <div class="scroller"><table><thead><tr><th>Product</th><th>Price</th><th>Average change</th><th>Proposed order</th></tr></thead><tbody id="signals"></tbody></table></div>
+</section>
+<div id="simulation" hidden>
+  <section class="panel">
+    <h2>Simulation results</h2>
+    <p>All four strategies start with 1,000 cash and 10 units per product. Orders use data through the prior tick and fill at the next recorded price with a 50 cash reserve and no short selling. Fees and market impact are excluded. Random baselines use a fixed seed and the same 10-unit cap.</p>
+    <div class="scroller"><table><thead><tr><th>Strategy</th><th>Final value</th><th>Return</th><th>Max. drawdown</th></tr></thead><tbody id="metrics"></tbody></table></div>
   </section>
-  <section>
-    <h2>Holdings</h2>
-    <pre id="holdings" aria-live="polite">Loading...</pre>
+  <div class="charts">
+    <section class="panel"><h2>Performance vs. baselines</h2><p>Portfolio value indexed to 100 at the first tick.</p><canvas id="performance" aria-label="Indexed portfolio value by strategy" role="img"></canvas><ul class="legend" id="performance-legend"></ul></section>
+    <section class="panel"><h2>Drawdown</h2><p>Percentage below each strategy’s running peak.</p><canvas id="risk" aria-label="Portfolio drawdown by strategy" role="img"></canvas><ul class="legend" id="risk-legend"></ul></section>
+  </div>
+  <section class="panel"><h2>Simulated decision log</h2><p>Latest 12 momentum decisions, including holds and any difference between requested and filled units.</p>
+    <div class="scroller"><table><thead><tr><th>Fill tick</th><th>Product</th><th>Signal</th><th>Requested</th><th>Filled</th><th>Reason</th></tr></thead><tbody id="decisions"></tbody></table></div>
   </section>
-<script>
-const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/docs/data/market.json";
-const HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/traders/hendzormati/holdings.json";
-
-async function checkFeed(id, url, describe) {
-  const output = document.getElementById(id);
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      output.textContent = id === "holdings" && response.status === 404
-        ? "Holdings feed unavailable (HTTP 404). Check your registration and the exact URL with the organizer."
-        : `Feed unavailable (HTTP ${response.status}).`;
-      return;
-    }
-    const data = await response.json();
-    output.textContent = describe(data);
-  } catch (error) {
-    output.textContent = `Could not read the feed as JSON. ${error.message}`;
-  }
-}
-
-checkFeed("market", MARKET_URL, (market) => JSON.stringify({
-  generated_at: market.generated_at,
-  products: market.products,
-  ticks: market.history.length,
-  latest_tick: market.history.at(-1),
-}, null, 2));
-checkFeed("holdings", HOLDINGS_URL, (holdings) => JSON.stringify(holdings, null, 2));
-</script>
+</div>
+</main>
 </body>
 </html>
