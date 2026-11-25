@@ -13,11 +13,21 @@ def fetch_json(url):
     return resp.json()
 
 def compute_signal(prices):
-    """
-    YOUR TASK -- see "Your task: design your trading signal" below for the
-    exact contract. Replace this body; as written it never trades.
-    """
-    return 0.0  # TODO: replace with your own signal logic
+    # Compare two consecutive three-tick averages to smooth single-tick noise.
+    if len(prices) < 6:
+        return 0.0
+
+    previous = sum(prices[-6:-3]) / 3
+    recent = sum(prices[-3:]) / 3
+    if previous <= 0:
+        return 0.0
+
+    change = (recent - previous) / previous
+    # Ignore small changes and cap the requested trade at 10 units.
+    if abs(change) < 0.02:
+        return 0.0
+    return max(-0.10, min(0.10, change))
+
 
 def apply_budget_guard(raw_signal, money, price, reserve=MIN_MONEY_RESERVE):
     # A buy signal (positive) that would spend into the reserve gets scaled down,

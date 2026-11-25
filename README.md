@@ -1,5 +1,7 @@
 # Student manual — ENSIM Trade Center (trader side)
 
+> **[dashboard is live](https://business-intelligence-26.github.io/ensim-trader-hend/)**
+
 *Companion to `TP_2_DELIVERY_MANUAL_ensim_trade_center_trader.md` (the full
 technical reference — exact tested behavior, troubleshooting) and
 `project2_ensim_trade_center.md` (the actual assignment brief: what you're
