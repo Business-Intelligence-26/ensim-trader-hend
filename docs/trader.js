@@ -5,6 +5,49 @@ const byId = (id) => document.getElementById(id);
 const number = (value) => value.toFixed(2);
 const pct = (value) => value == null ? "—" : `${(value * 100).toFixed(2)}%`;
 let market;
+let currentHoldings;
+let watchTimer;
+const draft = new Map();
+
+function renderDraft() {
+  const output = byId("order-json");
+  output.textContent = market ? JSON.stringify(Object.fromEntries(
+    market.products.map(product => [product, (draft.get(product) || 0) / 100])
+  ), null, 2) : "";
+  const error = validateDraft(draft);
+  byId("order-status").textContent = error || "Brouillon local prêt à copier.";
+  byId("copy-order").disabled = Boolean(error);
+}
+
+function validateDraft(orders) {
+  if (!market || !currentHoldings) return "Actualise les flux avant de préparer un ordre.";
+  const latest = market.history.at(-1);
+  let cost = 0;
+  for (const [product, quantity] of orders) {
+    if (quantity < -currentHoldings.products[product]) return "Stock insuffisant pour " + product + ".";
+    if (quantity > 0) cost += quantity * latest[product];
+  }
+  return cost > Math.max(0, currentHoldings.money - RESERVE) + 1e-9
+    ? "Trésorerie insuffisante pour ces achats avec la réserve de 50." : "";
+}
+
+function prepareOrder(direction) {
+  const product = byId("order-product").value;
+  const input = byId("order-quantity");
+  if (!input.checkValidity() || !input.value || !market?.products.includes(product)) {
+    byId("order-status").textContent = "Choisis une quantité de 0,1 à 10, par pas de 0,1.";
+    return;
+  }
+  const proposed = new Map(draft).set(product, Number(input.value) * direction);
+  const error = validateDraft(proposed);
+  if (error) {
+    byId("order-status").textContent = error;
+    return;
+  }
+  draft.set(product, proposed.get(product));
+  renderDraft();
+}
+
 
 async function fetchFeed(url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -137,7 +180,10 @@ function showTrend() {
 
 async function refresh() {
   const button = byId("refresh");
+  if (button.disabled) return;
   button.disabled = true;
+  currentHoldings = undefined;
+  renderDraft();
   byId("action").textContent = "Décision en attente des flux";
   byId("holding-state").textContent = "Chargement des positions…";
   byId("cash-kpi").textContent = "—";
@@ -160,7 +206,14 @@ async function refresh() {
     const account = holdings.value;
     if (!Number.isFinite(account.money) || account.money < 0 || data.products.some(p =>
       !Number.isFinite(account.products?.[p]) || account.products[p] < 0)) throw new Error("Positions invalides");
+    currentHoldings = account;
+    const orderProduct = byId("order-product");
+    const selectedOrderProduct = orderProduct.value;
+    orderProduct.replaceChildren(...data.products.map(p => new Option(p, p)));
+    if (data.products.includes(selectedOrderProduct)) orderProduct.value = selectedOrderProduct;
+    byId("order-panel").hidden = false;
     showSignals(account);
+    renderDraft();
   } catch (error) {
     byId("holding-state").textContent = error.message;
     byId("action").textContent = "Aucune recommandation disponible";
@@ -169,6 +222,37 @@ async function refresh() {
   }
 }
 
+byId("buy").addEventListener("click", () => prepareOrder(1));
+byId("sell").addEventListener("click", () => prepareOrder(-1));
+byId("clear-orders").addEventListener("click", () => { draft.clear(); renderDraft(); });
+byId("copy-order").addEventListener("click", async () => {
+  const error = validateDraft(draft);
+  if (error) {
+    byId("order-status").textContent = error;
+    return;
+  }
+  const decision = JSON.parse(byId("order-json").textContent);
+  decision.updated_at = new Date().toISOString();
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(decision, null, 2));
+    byId("order-status").textContent = "Copié. Colle le JSON dans GitHub et valide le commit pour publier.";
+  } catch {
+    byId("order-json").textContent = JSON.stringify(decision, null, 2);
+    byId("order-status").textContent = "Copie manuellement le JSON affiché.";
+  }
+});
+byId("watch-market").addEventListener("click", () => {
+  const button = byId("watch-market");
+  if (watchTimer) {
+    clearInterval(watchTimer);
+    watchTimer = undefined;
+  } else {
+    watchTimer = setInterval(refresh, 5 * 60 * 1000);
+    refresh();
+  }
+  button.setAttribute("aria-pressed", String(Boolean(watchTimer)));
+  button.textContent = watchTimer ? "Arrêter le suivi" : "Activer le suivi toutes les 5 minutes";
+});
 byId("refresh").addEventListener("click", refresh);
 for (const id of ["product", "window"]) byId(id).addEventListener("change", showTrend);
 window.addEventListener("resize", showTrend);
