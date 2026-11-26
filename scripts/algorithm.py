@@ -1,4 +1,5 @@
 import json, math, time
+from pathlib import Path
 import requests
 
 # Fill these in with the URLs the organizer gave you when they registered you:
@@ -60,8 +61,16 @@ def main():
             decision[p] = -min(requested, math.floor(inventory[p] * 10)) / 1000
 
     decision["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    journal = Path("docs/decision_history.json")
+    records = json.loads(journal.read_text(encoding="utf-8")) if journal.exists() else []
+    records.append({
+        "published_at": decision["updated_at"],
+        "market_tick": history[-1].get("t"),
+        "signals": {p: decision[p] for p in products},
+    })
     with open("decision.json", "w") as f:
         json.dump(decision, f, indent=2)
+    journal.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
     print(f"Wrote decision.json: {decision}")
 
 if __name__ == "__main__":

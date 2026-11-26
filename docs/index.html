@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ENSIM Trader | Hend Zormati</title>
-<link rel="stylesheet" href="trader.css?v=ordres-manuels">
-<script src="trader.js?v=ordres-manuels" defer></script>
+<link rel="stylesheet" href="trader.css?v=historique">
+<script src="trader.js?v=historique" defer></script>
 </head>
 <body>
 <main>
@@ -36,30 +36,11 @@
   </div>
   <canvas id="trend" role="img" aria-label="Prix observés et moyenne mobile sur trois ticks"></canvas>
   <ul class="legend"><li><span class="raw-dot"></span>Prix observés</li><li><span class="average-dot"></span>Moyenne mobile sur trois ticks</li></ul>
-  <p>La moyenne mobile reprend le lissage du TD4. La recommandation et sa justification sont placées en premier, selon la démarche de décision du TD5.</p>
-</section>
-<section class="panel" id="order-panel" hidden>
-  <h2>Préparer un ordre</h2>
-  <p>Modifie la décision locale, puis copie le JSON dans GitHub pour la publier. Le marché lit la dernière décision publiée à chaque tick.</p>
-  <div class="controls">
-    <label>Produit<select id="order-product"></select></label>
-    <label>Quantité <input id="order-quantity" type="number" min="0.1" max="10" step="0.1" value="1"></label>
-    <button id="buy">Acheter</button><button id="sell">Vendre</button>
-    <button id="clear-orders" class="secondary">Vider le brouillon</button>
-  </div>
-  <p id="order-status" aria-live="polite"></p>
-  <pre id="order-json"></pre>
-  <button id="copy-order" disabled>Copier la décision</button>
-  <a href="https://github.com/Business-Intelligence-26/ensim-trader-hend/edit/main/decision.json">Publier sur GitHub</a>
 </section>
 <section class="panel">
-  <h2>Suivi et automatisation</h2>
-  <button id="watch-market" aria-pressed="false">Activer le suivi toutes les 5 minutes</button>
-  <p>Le suivi recalcule les recommandations tant que cette page reste ouverte. Auto decide est un workflow GitHub distinct qui publie sa décision et peut remplacer une décision manuelle.</p>
-  <p><a href="https://github.com/Business-Intelligence-26/ensim-trader-hend/actions/workflows/auto_decide.yml">Ouvrir Auto decide dans GitHub Actions</a></p>
-  <h3>Historique des décisions publiées</h3>
-  <p>Les commits montrent les ordres transmis. La confirmation d’exécution dépend d’un journal fourni par le marché.</p>
-  <a href="https://github.com/Business-Intelligence-26/ensim-trader-hend/commits/main/decision.json">Voir l’historique de decision.json</a>
+  <h2>Historique des décisions publiées</h2>
+  <p id="history-state" aria-live="polite"></p>
+  <div class="scroller"><table><thead><tr><th>Date (UTC)</th><th>Tick du signal</th><th>Produit</th><th>Décision</th><th>Quantité demandée</th><th>Gain / perte réalisé</th></tr></thead><tbody id="decision-history"></tbody></table></div>
 </section>
 <footer>Données de marché et positions fournies par <a href="https://github.com/exofri/ensim-trade-center">ENSIM Trade Center</a>.</footer>
 </main>
