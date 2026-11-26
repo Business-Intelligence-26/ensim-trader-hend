@@ -33,12 +33,25 @@ def compute_signal(prices):
 
 def main():
     market = fetch_json(MARKET_URL)
-    holdings = fetch_json(HOLDINGS_URL)
     products = market["products"]
     history = market["history"]
 
     if not history:
         raise ValueError("Market feed has no prices")
+    journal = Path("docs/decision_history.json")
+    records = json.loads(journal.read_text(encoding="utf-8")) if journal.exists() else []
+    tick = history[-1]["t"]
+    if type(tick) is not int:
+        raise ValueError("Market tick must be an integer")
+    last_tick = max(
+        (record["market_tick"] for record in records if type(record.get("market_tick")) is int),
+        default=-1,
+    )
+    if tick <= last_tick:
+        print(f"Tick {tick} already covered (last recorded tick {last_tick}). No update.")
+        return
+
+    holdings = fetch_json(HOLDINGS_URL)
     cash = holdings["money"]
     inventory = holdings["products"]
     if not math.isfinite(cash) or cash < 0 or any(
@@ -61,11 +74,9 @@ def main():
             decision[p] = -min(requested, math.floor(inventory[p] * 10)) / 1000
 
     decision["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    journal = Path("docs/decision_history.json")
-    records = json.loads(journal.read_text(encoding="utf-8")) if journal.exists() else []
     records.append({
         "published_at": decision["updated_at"],
-        "market_tick": history[-1].get("t"),
+        "market_tick": tick,
         "signals": {p: decision[p] for p in products},
     })
     with open("decision.json", "w") as f:
