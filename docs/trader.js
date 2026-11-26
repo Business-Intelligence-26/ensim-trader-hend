@@ -1,21 +1,10 @@
 const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/docs/data/market.json";
 const HOLDINGS_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/main/traders/hendzormati/holdings.json";
 const RESERVE = 50;
-const START_CASH = 1000;
-const START_UNITS = 10;
 const byId = (id) => document.getElementById(id);
 const number = (value) => value.toFixed(2);
 const pct = (value) => value == null ? "—" : `${(value * 100).toFixed(2)}%`;
-const strategies = [
-  { id: "momentum", name: "Momentum", color: "#8be2c3" },
-  { id: "random", name: "Random trader", color: "#8cb9ff" },
-  { id: "buy", name: "Random buyer", color: "#f9be74" },
-  { id: "sell", name: "Random seller", color: "#f19ac8" },
-];
 let market;
-let results;
-let mode = "live";
-let holdingsRequest = 0;
 
 async function fetchFeed(url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -38,63 +27,6 @@ function momentum(history, product, end) {
   };
 }
 
-function randomGenerator() {
-  let state = 42;
-  return () => {
-    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-function replay({ products, history }, strategy) {
-  let cash = START_CASH;
-  const holdings = Object.fromEntries(products.map((product) => [product, START_UNITS]));
-  const value = (tick) => cash + products.reduce((sum, p) => sum + holdings[p] * tick[p], 0);
-  const initialValue = value(history[0]);
-  let peak = initialValue;
-  const random = randomGenerator();
-  const series = [{ value: initialValue, drawdown: 0 }];
-  const log = [];
-
-  for (let i = 1; i < history.length; i++) {
-    const tick = history[i];
-    const orders = products.map((product) => {
-      if (strategy.id === "momentum") return { product, ...momentum(history, product, i - 1) };
-      // All baselines have the same warm-up and use the same random draws.
-      if (i < 6) return { product, signal: 0 };
-      const direction = random();
-      const size = random() * 0.1;
-      const signal = direction < 1 / 3 && strategy.id !== "sell" ? size
-        : direction > 2 / 3 && strategy.id !== "buy" ? -size : 0;
-      return { product, signal };
-    });
-
-    // Execute sells first, then share the available cash across buys in product order.
-    orders.sort((a, b) => Math.sign(a.signal) - Math.sign(b.signal));
-    for (const { product, signal, reason } of orders) {
-      const price = tick[product];
-      const requested = Math.round(signal * 1000) / 10;
-      let filled = 0;
-      if (requested < 0) filled = -Math.min(-requested, holdings[product]);
-      if (requested > 0) {
-        const affordable = Math.floor(Math.max(0, cash - RESERVE) / price * 10) / 10;
-        filled = Math.min(requested, affordable);
-      }
-      holdings[product] = Math.round((holdings[product] + filled) * 10) / 10;
-      cash -= filled * price;
-      if (strategy.id === "momentum") {
-        const limit = requested === filled ? "" : requested > 0 ? " · Cash limit" : " · Inventory limit";
-        log.push([tick.t ?? i, product, signal > 0 ? "Buy" : signal < 0 ? "Sell" : "Hold", requested.toFixed(1), filled.toFixed(1), reason + limit]);
-      }
-    }
-
-    const portfolio = value(tick);
-    peak = Math.max(peak, portfolio);
-    series.push({ value: portfolio, drawdown: portfolio / peak - 1 });
-  }
-  return { ...strategy, cash, holdings, series, log };
-}
-
 function fillTable(id, rows) {
   const body = byId(id);
   body.replaceChildren();
@@ -104,14 +36,34 @@ function fillTable(id, rows) {
   }
 }
 
-function showSignals() {
-  const end = market.history.length - 1;
-  fillTable("signals", market.products.map((product) => {
-    const { change, signal } = momentum(market.history, product, end);
-    const order = signal ? `${signal > 0 ? "Buy" : "Sell"} ${(Math.abs(signal) * 100).toFixed(1)} units` : "Hold";
-    return [product, number(market.history[end][product]), pct(change), order];
-  }));
-  byId("signals-panel").hidden = false;
+function showSignals(holdings) {
+  const { products, history } = market;
+  const latest = history.at(-1);
+  const signals = products.map(product => ({product, ...momentum(history, product, history.length - 1)}));
+  signals.sort((a, b) => b.signal - a.signal);
+  let budget = Math.max(0, holdings.money - RESERVE);
+  let value = holdings.money;
+  const rows = signals.map(({product, change, signal}) => {
+    const price = latest[product];
+    const stock = holdings.products[product];
+    value += price * stock;
+    const requested = Math.floor(Math.abs(signal) * 1000);
+    const limit = signal > 0 ? Math.floor(budget * 10 / price) : Math.floor(stock * 10);
+    const amount = Math.min(requested, limit);
+    if (signal > 0) budget = Math.max(0, budget - amount * price / 10);
+    const order = amount ? `${signal > 0 ? "Acheter" : "Vendre"} ${(amount / 10).toFixed(1)}` : "Conserver";
+    const reason = change == null ? "Historique insuffisant"
+      : !signal ? "Variation inférieure à 2 %"
+      : `${signal > 0 ? "Hausse" : "Baisse"} de la moyenne sur 3 ticks`;
+    const constraint = amount < requested ? (signal > 0 ? " · Budget disponible" : " · Stock disponible") : "";
+    return {product, amount, cells: [product, number(price), number(stock), pct(change), order, reason + constraint]};
+  });
+  fillTable("signals", rows.map(row => row.cells));
+  const actions = rows.filter(row => row.amount).map(row => `${row.product} · ${row.cells[4]}`);
+  byId("action").textContent = actions.join(" / ") || "Conserver les positions";
+  byId("cash-kpi").textContent = number(holdings.money);
+  byId("value-kpi").textContent = number(value);
+  byId("holding-state").textContent = "Positions réelles chargées. Valeur calculée au dernier prix observé.";
 }
 
 function drawChart(id, history, datasets, suffix = "") {
@@ -176,111 +128,48 @@ function showTrend() {
   });
   const change = prices.at(-1) / prices[0] - 1;
   byId("trend-summary").textContent =
-    `Product ${product} · Last price ${number(prices.at(-1))} · ${pct(change)} change across ${visible.length} ticks`;
+    `Produit ${product} · Dernier prix ${number(prices.at(-1))} · Variation de ${pct(change)} sur ${visible.length} ticks`;
   drawChart("trend", visible, [
     { points: prices, color: "#8cb9ff" },
     { points: average, color: "#8be2c3", emphasis: true },
   ]);
 }
 
-function redrawCharts() {
-  showTrend();
-  if (mode !== "simulation" || !results) return;
-  const indexed = results.map(({ id, color, series }) => ({
-    color, emphasis: id === "momentum", points: series.map((tick) => 100 * tick.value / series[0].value),
-  }));
-  const drawdowns = results.map(({ id, color, series }) => ({
-    color, emphasis: id === "momentum", points: series.map((tick) => 100 * tick.drawdown),
-  }));
-  drawChart("performance", market.history, indexed);
-  drawChart("risk", market.history, drawdowns, "%");
-}
-
-function setKpi(id, label, value = 0) {
-  const target = byId(id);
-  target.textContent = label;
-  target.dataset.tone = value < 0 ? "negative" : value > 0 ? "positive" : "";
-}
-
-function useSimulation() {
-  if (!market) return;
-  mode = "simulation";
-  results ??= strategies.map((strategy) => replay(market, strategy));
-  const own = results[0];
-  const totalReturn = ({ series }) => series.at(-1).value / series[0].value - 1;
-  const best = results.slice(1).reduce((a, b) => totalReturn(a) >= totalReturn(b) ? a : b);
-  const ownReturn = totalReturn(own);
-  const maxDrawdown = Math.min(...own.series.map((tick) => tick.drawdown));
-  const gap = ownReturn - totalReturn(best);
-  setKpi("return-kpi", pct(ownReturn), ownReturn);
-  setKpi("risk-kpi", pct(maxDrawdown), maxDrawdown);
-  setKpi("comparison-kpi", `${(100 * gap).toFixed(2)} pp`, gap);
-  byId("comparison-note").textContent = `vs. ${best.name} · simulation`;
-  byId("holding-state").textContent = "Simulation active. These holdings and orders are fictional.";
-  byId("holdings").textContent = [
-    `Ending cash: ${number(own.cash)}`,
-    ...market.products.map((product) => `${product}: ${own.holdings[product]} units`),
-  ].join("\n");
-  byId("holdings").hidden = false;
-  byId("simulation").hidden = false;
-  fillTable("metrics", results.map(({ name, series }) => [
-    name,
-    number(series.at(-1).value),
-    pct(series.at(-1).value / series[0].value - 1),
-    pct(Math.min(...series.map((tick) => tick.drawdown))),
-  ]));
-  fillTable("decisions", own.log.slice(-12).reverse());
-  for (const id of ["performance-legend", "risk-legend"]) {
-    byId(id).replaceChildren(...results.map(({ name, color }) => {
-      const item = document.createElement("li");
-      const sample = document.createElement("span");
-      sample.style.backgroundColor = color;
-      item.append(sample, name);
-      return item;
-    }));
-  }
-  redrawCharts();
-}
-
-async function useLiveHoldings() {
-  const request = ++holdingsRequest;
-  mode = "live";
-  for (const id of ["return-kpi", "risk-kpi", "comparison-kpi"]) setKpi(id, "—");
-  byId("comparison-note").textContent = "Percentage points · simulation";
-  byId("simulation").hidden = true;
-  byId("holdings").hidden = true;
-  byId("holding-state").textContent = "Checking the organizer’s holdings feed…";
+async function refresh() {
+  const button = byId("refresh");
+  button.disabled = true;
+  byId("action").textContent = "Décision en attente des flux";
+  byId("holding-state").textContent = "Chargement des positions…";
+  byId("cash-kpi").textContent = "—";
+  byId("value-kpi").textContent = "—";
+  fillTable("signals", []);
   try {
-    const holdings = await fetchFeed(HOLDINGS_URL);
-    if (mode !== "live" || request !== holdingsRequest) return;
-    byId("holding-state").textContent = "Organizer holdings loaded. Historical comparisons are available in simulation mode.";
-    byId("holdings").textContent = JSON.stringify(holdings, null, 2);
-    byId("holdings").hidden = false;
+    const [prices, holdings] = await Promise.allSettled([fetchFeed(MARKET_URL), fetchFeed(HOLDINGS_URL)]);
+    if (prices.status === "rejected") throw new Error("Marché : " + prices.reason.message);
+    const data = prices.value;
+    if (!data.products?.length || !data.history?.length || data.history.some(tick =>
+      data.products.some(p => !Number.isFinite(tick[p]) || tick[p] <= 0))) throw new Error("Prix invalides");
+    const selected = byId("product").value;
+    market = data;
+    byId("product").replaceChildren(...data.products.map(p => new Option(p, p)));
+    if (data.products.includes(selected)) byId("product").value = selected;
+    byId("market-panel").hidden = false;
+    byId("market-state").textContent = `${data.history.length} ticks · Flux marché ${data.generated_at}`;
+    showTrend();
+    if (holdings.status === "rejected") throw new Error("Positions : " + holdings.reason.message);
+    const account = holdings.value;
+    if (!Number.isFinite(account.money) || account.money < 0 || data.products.some(p =>
+      !Number.isFinite(account.products?.[p]) || account.products[p] < 0)) throw new Error("Positions invalides");
+    showSignals(account);
   } catch (error) {
-    if (mode !== "live" || request !== holdingsRequest) return;
-    byId("holding-state").textContent = `Organizer holdings unavailable (${error.message}). You can replay the market using simulated holdings.`;
+    byId("holding-state").textContent = error.message;
+    byId("action").textContent = "Aucune recommandation disponible";
+  } finally {
+    button.disabled = false;
   }
 }
 
-byId("simulate").addEventListener("click", useSimulation);
-byId("live-mode").addEventListener("click", useLiveHoldings);
+byId("refresh").addEventListener("click", refresh);
 for (const id of ["product", "window"]) byId(id).addEventListener("change", showTrend);
-window.addEventListener("resize", redrawCharts);
-useLiveHoldings();
-fetchFeed(MARKET_URL).then((data) => {
-  if (!data.products?.length || !data.history?.length || data.history.some((tick) =>
-    data.products.some((product) => !Number.isFinite(tick[product]) || tick[product] <= 0))) {
-    throw new Error("price history is missing or invalid");
-  }
-  market = data;
-  byId("market-state").textContent = `${data.history.length} market ticks · Last update ${data.generated_at}`;
-  byId("ticks-kpi").textContent = data.history.length;
-  for (const product of data.products) byId("product").add(new Option(product));
-  byId("market-panel").hidden = false;
-  byId("simulate").disabled = false;
-  showSignals();
-  showTrend();
-}).catch((error) => {
-  byId("market-state").textContent = `Market feed unavailable (${error.message}). A valid price history is required to simulate.`;
-});
-
+window.addEventListener("resize", showTrend);
+refresh();

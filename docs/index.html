@@ -1,78 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ENSIM Trader | Hend Zormati</title>
-<link rel="stylesheet" href="trader.css?v=market-dashboard">
-<script src="trader.js?v=market-dashboard" defer></script>
+<link rel="stylesheet" href="trader.css?v=positions-reelles">
+<script src="trader.js?v=positions-reelles" defer></script>
 </head>
 <body>
 <main>
 <header class="hero">
   <p class="eyebrow">ENSIM Trade Center · TP2</p>
-  <h1>Market &amp; strategy dashboard</h1>
-  <p>Hend Zormati · Track price trends, assess trade signals, and compare strategy risk.</p>
-  <p class="feed" id="market-state" aria-live="polite">Loading market history…</p>
+  <h1>Décision de trading</h1>
+  <p id="action" aria-live="polite">Chargement de la décision…</p>
+  <p class="feed" id="market-state"></p>
+  <button id="refresh">Actualiser les données</button>
 </header>
-<dl class="metrics" aria-label="Market and strategy statistics">
-  <div><dt>Market ticks</dt><dd id="ticks-kpi">—</dd><small>Observed price history</small></div>
-  <div><dt>Momentum return</dt><dd id="return-kpi">—</dd><small>Simulated portfolio</small></div>
-  <div><dt>Maximum drawdown</dt><dd id="risk-kpi">—</dd><small>Simulated peak-to-trough loss</small></div>
-  <div><dt>Gap vs. best baseline</dt><dd id="comparison-kpi">—</dd><small id="comparison-note">Percentage points · simulation</small></div>
+<dl class="metrics">
+  <div><dt>Trésorerie réelle</dt><dd id="cash-kpi">—</dd></div>
+  <div><dt>Valeur du portefeuille</dt><dd id="value-kpi">—</dd></div>
+  <div><dt>Réserve minimale</dt><dd>50</dd></div>
 </dl>
-<div class="grid">
-  <section class="panel" id="market-panel" hidden>
-    <h2>Price trend</h2>
-    <p id="trend-summary" aria-live="polite"></p>
-    <div class="controls">
-      <label>Product<select id="product"></select></label>
-      <label>History window<select id="window"><option value="30">Latest 30 ticks</option><option value="90">Latest 90 ticks</option><option value="0">Full history</option></select></label>
-    </div>
-    <canvas id="trend" aria-label="Observed prices and trailing three-tick average" role="img"></canvas>
-    <ul class="legend"><li><span class="raw-dot"></span>Observed price</li><li><span class="average-dot"></span>Trailing 3-tick average</li></ul>
-  </section>
-  <section class="panel">
-    <h2>Holdings</h2>
-    <p id="holding-state" aria-live="polite">Checking the organizer’s holdings feed…</p>
-    <div class="controls"><button id="simulate" disabled>Use simulated holdings</button><button id="live-mode" class="secondary">Use organizer holdings</button></div>
-    <pre id="holdings" hidden></pre>
-  </section>
-</div>
-<section class="panel" id="signals-panel" hidden>
-  <h2>Latest product signals</h2>
-  <p>The signal compares consecutive three-tick averages. It holds below a 2% move and caps a proposed order at 10 units.</p>
-  <div class="scroller"><table><thead><tr><th scope="col">Product</th><th scope="col">Last price</th><th scope="col">Average change</th><th scope="col">Proposed order</th></tr></thead><tbody id="signals"></tbody></table></div>
-</section>
-<div id="simulation" hidden>
-  <section class="panel">
-    <h2>Strategy comparison</h2>
-    <p>Simulated portfolios on the organizer’s observed prices.</p>
-    <div class="scroller"><table><thead><tr><th scope="col">Strategy</th><th scope="col">Final value</th><th scope="col">Return</th><th scope="col">Max. drawdown</th></tr></thead><tbody id="metrics"></tbody></table></div>
-    <details><summary>Replay assumptions</summary><p>Each strategy starts with 1,000 cash and 10 units of each product. Orders use information through the prior tick and fill at the next recorded price. The replay applies a 50 cash reserve, forbids short selling, and excludes fees and market impact. The random baselines use seed 42 and the same 10-unit cap.</p></details>
-  </section>
-  <div class="grid">
-    <section class="panel"><h2>Performance vs. baselines</h2><p>Portfolio value indexed to 100 at the first tick.</p><canvas id="performance" aria-label="Indexed portfolio value by strategy" role="img"></canvas><ul class="legend" id="performance-legend"></ul></section>
-    <section class="panel"><h2>Drawdown over time</h2><p>Percentage below each strategy’s running peak.</p><canvas id="risk" aria-label="Portfolio drawdown by strategy" role="img"></canvas><ul class="legend" id="risk-legend"></ul></section>
-  </div>
-  <section class="panel"><h2>Simulated decision log</h2><p>Latest 12 momentum decisions with requested and filled quantities.</p>
-    <div class="scroller"><table><thead><tr><th scope="col">Fill tick</th><th scope="col">Product</th><th scope="col">Signal</th><th scope="col">Requested</th><th scope="col">Filled</th><th scope="col">Reason</th></tr></thead><tbody id="decisions"></tbody></table></div>
-  </section>
-</div>
 <section class="panel">
-  <h2>Course methods used in TP2</h2>
-  <details><summary>How the course projects shaped this dashboard</summary>
-    <ul class="sources">
-      <li><strong>TD1 · EU Capitals</strong> starts from a decision and brings source data into a published dashboard. TP2 applies that pattern to observed prices and trade decisions. <a href="https://github.com/Business-Intelligence-26/eu-capitals-dashboard">TD1 repository</a></li>
-      <li><strong>TD2 · Smart Mobility</strong> documents proxy assumptions. TP2 labels the starting portfolio, execution rules, and benchmark seed as replay assumptions. <a href="https://github.com/Business-Intelligence-26/smart-mobility-lemans">TD2 repository</a></li>
-      <li><strong>TD3 · Scraping to KPI</strong> turns source records into defined measures. TP2 converts price ticks into three-tick averages and portfolio values into return and drawdown. <a href="https://github.com/Business-Intelligence-26/scraping-to-kpi">TD3 repository</a></li>
-      <li><strong>TD4 · Time Series</strong> motivates the trailing average. TP2 compares two consecutive averages to produce a signal, and evaluates that signal on the next tick. <a href="https://github.com/Business-Intelligence-26/td-time-series">TD4 repository</a></li>
-      <li><strong>TD5 · Dashboard Design</strong> chooses charts around specific actions. Price and average lines support signal review, indexed lines support strategy comparison, and the drawdown chart shows how long losses persisted. <a href="https://github.com/Business-Intelligence-26/td-logistics-dashboards">TD5 repository</a></li>
-      <li><strong>TP1 · Smart Internship Match</strong> contributes the overview-to-detail layout. KPI cards summarize the session, while the product filter and decision log let you inspect the evidence. <a href="https://github.com/Business-Intelligence-26/smart-internship-match">TP1 repository</a></li>
-    </ul>
-  </details>
+  <h2>Recommandation par produit</h2>
+  <p id="holding-state" aria-live="polite"></p>
+  <p>Le signal compare deux moyennes de trois ticks. Seuil de 2 %, maximum de 10 unités. Les achats les plus forts sont prioritaires et partagent la trésorerie au-dessus de la réserve. Les ventes sont limitées au stock réel.</p>
+  <div class="scroller"><table><thead><tr><th>Produit</th><th>Dernier prix</th><th>Stock</th><th>Variation du signal</th><th>Action proposée</th><th>Justification</th></tr></thead><tbody id="signals"></tbody></table></div>
 </section>
-<footer>Price data from the organizer’s <a href="https://github.com/exofri/ensim-trade-center">ENSIM Trade Center</a>.</footer>
+<section class="panel" id="market-panel" hidden>
+  <h2>Tendance des prix</h2>
+  <p id="trend-summary"></p>
+  <div class="controls">
+    <label>Produit<select id="product"></select></label>
+    <label>Période<select id="window"><option value="30">30 derniers ticks</option><option value="90">90 derniers ticks</option><option value="0">Tout l’historique</option></select></label>
+  </div>
+  <canvas id="trend" role="img" aria-label="Prix observés et moyenne mobile sur trois ticks"></canvas>
+  <ul class="legend"><li><span class="raw-dot"></span>Prix observés</li><li><span class="average-dot"></span>Moyenne mobile sur trois ticks</li></ul>
+  <p>La moyenne mobile reprend le lissage du TD4. La recommandation et sa justification sont placées en premier, selon la démarche de décision du TD5.</p>
+</section>
+<footer>Données de marché et positions fournies par <a href="https://github.com/exofri/ensim-trade-center">ENSIM Trade Center</a>.</footer>
 </main>
 </body>
 </html>

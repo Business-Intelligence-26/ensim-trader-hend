@@ -1,4 +1,4 @@
-import json, time
+import json, math, time
 import requests
 
 # Fill these in with the URLs the organizer gave you when they registered you:
@@ -30,32 +30,34 @@ def compute_signal(prices):
     return max(-0.10, min(0.10, change))
 
 
-def apply_budget_guard(raw_signal, money, price, reserve=MIN_MONEY_RESERVE):
-    # A buy signal (positive) that would spend into the reserve gets scaled down,
-    # not silently zeroed out -- you still act on the signal, just smaller. A sell
-    # signal is never touched here: selling only ever adds money, never risks it.
-    if raw_signal <= 0:
-        return raw_signal
-    if money <= reserve:
-        return 0.0
-    max_affordable_units = (money - reserve) / price
-    desired_units = 100 * raw_signal
-    if desired_units <= max_affordable_units:
-        return raw_signal
-    return round(max_affordable_units / 100, 3)
-
 def main():
     market = fetch_json(MARKET_URL)
     holdings = fetch_json(HOLDINGS_URL)
     products = market["products"]
     history = market["history"]
 
-    decision = {}
-    for p in products:
-        prices = [row[p] for row in history]
-        raw = compute_signal(prices)
-        current_price = prices[-1] if prices else 0
-        decision[p] = round(apply_budget_guard(raw, holdings["money"], current_price), 3)
+    if not history:
+        raise ValueError("Market feed has no prices")
+    cash = holdings["money"]
+    inventory = holdings["products"]
+    if not math.isfinite(cash) or cash < 0 or any(
+        not math.isfinite(inventory[p]) or inventory[p] < 0 for p in products
+    ):
+        raise ValueError("Invalid holdings")
+    signals = {p: compute_signal([row[p] for row in history]) for p in products}
+    decision = dict.fromkeys(products, 0.0)
+    budget = max(0, cash - MIN_MONEY_RESERVE)
+    for p in sorted(products, key=signals.get, reverse=True):
+        price = history[-1][p]
+        if not math.isfinite(price) or price <= 0:
+            raise ValueError(f"Invalid price for {p}")
+        requested = math.floor(abs(signals[p]) * 1000)
+        if signals[p] > 0:
+            tenths = min(requested, math.floor(budget * 10 / price))
+            budget = max(0, budget - tenths * price / 10)
+            decision[p] = tenths / 1000
+        elif signals[p] < 0:
+            decision[p] = -min(requested, math.floor(inventory[p] * 10)) / 1000
 
     decision["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with open("decision.json", "w") as f:
